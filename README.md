@@ -2,7 +2,8 @@
 
 A free, Pixelcut-style **AI photo studio** that runs mostly in your browser — cutouts, refine brush, magic eraser, upscale, shadows and batch export with no uploads. Optional generative tools (product shots, text-to-image, expand, virtual try-on) call [fal.ai](https://fal.ai) with a key you paste in Settings (stored only in `localStorage`).
 
-**Live app:** https://lyraofweb3.github.io/cutkit/
+**Live app (Railway):** RAILWAY_URL  
+Mirror (GitHub Pages, single-threaded): https://lyraofweb3.github.io/cutkit/
 
 ## Features
 - **Landing** with tool grid, dark/light theme, undo/redo, mobile layout
@@ -22,7 +23,8 @@ Video background removal is **not** included (too heavy for a static Pages app).
 npm install
 npm run dev      # http://localhost:5173/cutkit/
 npm run build
-npm run deploy   # build + push dist/ to gh-pages
+npm start        # serve dist/ with COOP/COEP headers on $PORT (Railway)
+npm run deploy   # GitHub Pages mirror (base /cutkit/)
 ```
 
 ## Limits
