@@ -19,7 +19,7 @@ npm install
 npm run dev      # http://localhost:5173/cutkit/
 npm run build    # production build in dist/
 ```
-Deploys automatically to GitHub Pages on every push to `main` (`.github/workflows/deploy.yml`).
+Deployed to GitHub Pages from the `gh-pages` branch: `npm run deploy` (builds and pushes `dist/`). A ready Actions workflow is in `deploy/github-pages-workflow.yml`; move it to `.github/workflows/` once your token has the `workflow` scope (`gh auth refresh -s workflow`).
 
 ## Limits
 - The first background removal downloads the AI model (~40–80 MB) from the IMG.LY CDN; after that it's cached by the browser.
