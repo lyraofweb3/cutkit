@@ -1,3 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-export default defineConfig({ plugins: [react()], base: '/cutkit/' })
+export default defineConfig({
+  plugins: [react()],
+  base: '/cutkit/',
+  optimizeDeps: { exclude: ['onnxruntime-web'] },
+  assetsInclude: ['**/*.wasm'],
+})

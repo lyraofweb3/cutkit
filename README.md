@@ -1,30 +1,37 @@
 # ✂️ CutKit
 
-A free, Pixelcut-style background remover that runs **100% in your browser** — no server, no uploads, no API keys.
+A free, Pixelcut-style **AI photo studio** that runs mostly in your browser — cutouts, refine brush, magic eraser, upscale, shadows and batch export with no uploads. Optional generative tools (product shots, text-to-image, expand, virtual try-on) call [fal.ai](https://fal.ai) with a key you paste in Settings (stored only in `localStorage`).
 
 **Live app:** https://lyraofweb3.github.io/cutkit/
 
 ## Features
-- Upload, drag-and-drop or paste JPG / PNG / WebP images
-- AI background removal in the browser (ONNX/WASM, WebGPU when available) with a progress bar
-- Before / After / Compare slider views, transparent checkerboard preview
-- Replace background: transparent, preset colours (white for marketplace shots), custom colour picker, or gradients (editable colours + angle)
-- Download PNG (transparent or with background) or JPG
-- Batch mode: add many images, process them in sequence, download all as a ZIP
-- Export sizes: Original, Square 1080×1080, Instagram Story 1080×1920, Amazon 2000×2000 (product trimmed and centred with padding)
+- **Landing** with tool grid, dark/light theme, undo/redo, mobile layout
+- **Remove background** — `@imgly/background-removal` (ONNX/WASM)
+- **Refine brush** — erase / restore mask with size, hardness, zoom & pan
+- **Magic Eraser** — LaMa inpainting (Apache-2.0) in-browser
+- **Upscale 2× / 4×** — Real-ESRGAN General x4v3 (BSD-3-Clause)
+- **Shadow** — soft / hard / float drop shadows
+- **Backgrounds** — transparent, colours, gradients, upload a photo, blur original
+- **Export** — PNG/JPG, batch ZIP, sizes: Original · 1080² · Story 1080×1920 · Amazon 2000²
+- **AI (needs fal key):** Product Shot (`fal-ai/bria/product-shot`), Generate (`fal-ai/flux/schnell`), Edit (`fal-ai/flux-pro/kontext`), Expand (`fal-ai/bria/expand`), Try-On (`fal-ai/flux-pro/v1/vto`)
+
+Video background removal is **not** included (too heavy for a static Pages app).
 
 ## Run locally
 ```bash
 npm install
 npm run dev      # http://localhost:5173/cutkit/
-npm run build    # production build in dist/
+npm run build
+npm run deploy   # build + push dist/ to gh-pages
 ```
-Deployed to GitHub Pages from the `gh-pages` branch: `npm run deploy` (builds and pushes `dist/`). A ready Actions workflow is in `deploy/github-pages-workflow.yml`; move it to `.github/workflows/` once your token has the `workflow` scope (`gh auth refresh -s workflow`).
 
 ## Limits
-- The first background removal downloads the AI model (~40–80 MB) from the IMG.LY CDN; after that it's cached by the browser.
-- Speed depends on the device: a few seconds per image on a modern laptop, slower on phones.
-- GitHub Pages doesn't send cross-origin-isolation headers, so the WASM runtime runs single-threaded (WebGPU used when supported).
+- First cutout downloads an IMG.LY model (~40–80 MB); Magic Eraser downloads LaMa (~200 MB); Upscale downloads Real-ESRGAN (~5 MB). All are cached by the browser afterwards.
+- In-browser tools use single-threaded WASM on GitHub Pages (no cross-origin isolation). Expect a few seconds per image on a laptop; phones are slower. Upscale of very large images can take a while or run out of memory (cap ~36 MP output).
+- Generative tools need your own [fal.ai key](https://fal.ai/dashboard/keys); usage is billed to your fal account. CutKit never stores the key on a server.
 
-## Licence
-This project uses [`@imgly/background-removal`](https://github.com/imgly/background-removal-js), which is licensed under **AGPL-3.0**. Because of that, CutKit is also released under AGPL-3.0 and its source is public. Commercial closed-source use needs a commercial licence from IMG.LY (or swapping the model).
+## Licences
+- App code: AGPL-3.0 (because `@imgly/background-removal` is AGPL-3.0)
+- LaMa ONNX (`Carve/LaMa-ONNX`): Apache-2.0
+- Real-ESRGAN General x4v3 ONNX (`CoderViking/realesr-general-x4v3-onnx`): BSD-3-Clause
+- fal models: see each model card (Bria = licensed training data; FLUX.1 schnell = Apache-2.0; FLUX pro / VTO = commercial API terms)
