@@ -11,6 +11,7 @@ const DESC: Record<Tool, string> = {
   generate: 'Create images from a prompt',
   expand: 'Outpaint beyond the borders',
   tryon: 'Put garments on a model',
+  video: 'Remove video backgrounds (Colab GPU)',
   export: 'Batch export in marketplace sizes',
 }
 

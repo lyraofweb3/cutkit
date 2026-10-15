@@ -9,7 +9,7 @@ export type Shadow = { enabled: boolean; blur: number; offsetX: number; offsetY:
 export type SizePreset = 'original' | 'square' | 'story' | 'amazon'
 export type Tool =
   | 'cutout' | 'refine' | 'eraser' | 'upscale' | 'shadow' | 'background'
-  | 'product' | 'generate' | 'expand' | 'tryon' | 'export'
+  | 'product' | 'generate' | 'expand' | 'tryon' | 'video' | 'export'
 
 export type Doc = {
   id: string
@@ -42,5 +42,6 @@ export const TOOLS: { id: Tool; label: string; icon: string; group: string; need
   { id: 'generate', label: 'AI Generate', icon: '✨', group: 'AI', needsKey: true },
   { id: 'expand', label: 'Expand', icon: '↔️', group: 'AI', needsKey: true },
   { id: 'tryon', label: 'Try-On', icon: '👕', group: 'AI', needsKey: true },
+  { id: 'video', label: 'Video BG', icon: '🎬', group: 'AI' },
   { id: 'export', label: 'Export', icon: '⬇️', group: 'Export' },
 ]

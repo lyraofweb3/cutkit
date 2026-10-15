@@ -2,7 +2,7 @@
 
 A free, Pixelcut-style **AI photo studio** that runs mostly in your browser — cutouts, refine brush, magic eraser, upscale, shadows and batch export with no uploads. Optional generative tools (product shots, text-to-image, expand, virtual try-on) call [fal.ai](https://fal.ai) with a key you paste in Settings (stored only in `localStorage`).
 
-**Live app (Railway):** RAILWAY_URL  
+**Live app (Railway):** https://cutkit-production-c14f.up.railway.app/  
 Mirror (GitHub Pages, single-threaded): https://lyraofweb3.github.io/cutkit/
 
 ## Features
@@ -16,7 +16,28 @@ Mirror (GitHub Pages, single-threaded): https://lyraofweb3.github.io/cutkit/
 - **Export** — PNG/JPG, batch ZIP, sizes: Original · 1080² · Story 1080×1920 · Amazon 2000²
 - **AI (needs fal key):** Product Shot (`fal-ai/bria/product-shot`), Generate (`fal-ai/flux/schnell`), Edit (`fal-ai/flux-pro/kontext`), Expand (`fal-ai/bria/expand`), Try-On (`fal-ai/flux-pro/v1/vto`)
 
-Video background removal is **not** included (too heavy for a static Pages app).
+Video background removal runs on the optional **Colab GPU backend** (below).
+
+## Colab GPU backend (free T4)
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lyraofweb3/cutkit/blob/main/colab/CutKit_GPU.ipynb)
+
+Adds **video background removal**, faster **upscaling** and **image generation** without paid APIs.
+
+1. Click the badge → **Runtime → Change runtime type → T4 GPU**.
+2. **Runtime → Run all.** Cell 3 prints a `https://….trycloudflare.com` **URL** and an **access token**.
+3. In CutKit open **⚙️ Settings → Colab GPU**, paste both, click **Save & test**. The header pill turns green ("Online").
+4. Use **Video BG**; **Upscale** and **AI Generate** now go to the GPU automatically (fallback: browser / fal.ai).
+
+Endpoints (`colab/server.py`, header `X-CutKit-Token`): `GET /health`, `POST /video/remove-bg`, `POST /upscale`, `POST /generate`, `POST /remove-bg`. CORS allows only the CutKit origins. The tunnel URL changes every session, and Colab stops idle sessions (free tier ≈ up to a few hours).
+
+| Endpoint | Model | Licence |
+|---|---|---|
+| video / remove-bg | BiRefNet + ffmpeg | MIT |
+| upscale | Real-ESRGAN General x4v3 | BSD-3-Clause |
+| generate | SDXL base 1.0 + LCM-LoRA | CreativeML OpenRAIL++-M |
+
+Local test with mocked models: `cd colab && CUTKIT_MOCK=1 python test_server.py`.
 
 ## Run locally
 ```bash

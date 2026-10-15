@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import JSZip from 'jszip'
 import { Home } from './components/Home'
-import { Settings } from './components/Settings'
+import { Settings, StatusPill } from './components/Settings'
+import { COLAB_NOTEBOOK, ColabOffline, checkColab, colabPost, type ColabStatus } from './lib/colab'
 import { Stage, type BrushMode } from './components/Stage'
 import { docFromFile, removeBg } from './lib/cutout'
 import { History } from './lib/history'
@@ -44,6 +45,17 @@ export default function App() {
   const [garment, setGarment] = useState<string>('')
   const [expandRatio, setExpandRatio] = useState('16:9')
   const [drag, setDrag] = useState(false)
+  const [colab, setColab] = useState<ColabStatus>({ state: 'unset' })
+  const [video, setVideo] = useState<File | null>(null)
+  const [videoBg, setVideoBg] = useState('transparent')
+  const [videoOut, setVideoOut] = useState<{ url: string; ext: string } | null>(null)
+  const recheck = useCallback(async () => { setColab((c) => (c.state === 'unset' ? c : { state: 'checking' })); setColab(await checkColab()) }, [])
+  useEffect(() => {
+    recheck()
+    const iv = window.setInterval(recheck, 60_000)
+    window.addEventListener('cutkit-colab', recheck)
+    return () => { window.clearInterval(iv); window.removeEventListener('cutkit-colab', recheck) }
+  }, [recheck])
   const histories = useRef(new Map<string, History>())
   const fileInput = useRef<HTMLInputElement>(null)
   const pendingTool = useRef<Tool | null>(null)
@@ -209,7 +221,25 @@ export default function App() {
     if (!doc) return
     const px = doc.width * doc.height * scale * scale
     if (px > 36e6) return notify(`Too large for ${scale}× in-browser (max ~36 MP output). Try 2× or a smaller image.`, 'err')
-    const r = await task(async (p) => { const { upscale } = await import('./lib/upscale'); return upscale(doc.rgb, doc.mask, scale, p) })
+    const r = await task(async (p) => {
+      if (colab.state === 'online') {
+        try {
+          p(30, `Upscaling ${scale}× on Colab GPU…`)
+          const fd = new FormData()
+          fd.append('file', await imageDataToBlob(doc.rgb), 'in.png'); fd.append('scale', String(scale))
+          const rgba = await blobToImageData(await colabPost('/upscale', fd))
+          const mc = document.createElement('canvas'); mc.width = doc.width; mc.height = doc.height
+          mc.getContext('2d')!.putImageData(doc.mask, 0, 0)
+          const oc = document.createElement('canvas'); oc.width = rgba.width; oc.height = rgba.height
+          const octx = oc.getContext('2d')!; octx.imageSmoothingQuality = 'high'; octx.drawImage(mc, 0, 0, rgba.width, rgba.height)
+          return { rgb: stripAlpha(rgba), mask: octx.getImageData(0, 0, rgba.width, rgba.height) }
+        } catch (e) {
+          if (!(e instanceof ColabOffline)) throw e
+          setColab({ state: 'offline' }); notify('Colab offline — upscaling in the browser instead.', 'err')
+        }
+      }
+      const { upscale } = await import('./lib/upscale'); return upscale(doc.rgb, doc.mask, scale, p)
+    })
     if (!r) return
     commit({ ...doc, rgb: r.rgb, mask: r.mask, width: r.rgb.width, height: r.rgb.height })
     notify(`Upscaled to ${r.rgb.width}×${r.rgb.height} ✓`)
@@ -250,13 +280,19 @@ export default function App() {
     })
   }
   const runGenerate = async (mode: 'new' | 'edit') => {
-    if (needKey()) return
+    if (!(mode === 'new' && colab.state === 'online') && needKey()) return
     if (!prompt.trim()) return notify('Type a prompt first.', 'err')
     await task(async (p) => {
       if (mode === 'edit' && doc) {
         const image_url = await docDataUrl(false)
         const out = await falRun(FAL_MODELS.edit, { prompt: prompt.trim(), image_url }, (l) => p(50, l))
         await replaceDocFromUrl(firstImageUrl(out))
+      } else if (colab.state === 'online') {
+        p(40, 'Generating on Colab GPU (first run loads SDXL, ~2 min)…')
+        const fd = new FormData(); fd.append('prompt', prompt.trim())
+        const blob = await colabPost('/generate', fd)
+        const d = await docFromFile(new File([blob], `generated-${Date.now()}.png`, { type: 'image/png' }))
+        setDocs((xs) => [...xs, d]); setActiveId(d.id); setScreen('editor')
       } else {
         const out = await falRun(FAL_MODELS.generate, { prompt: prompt.trim(), image_size: 'square_hd', num_images: 1, enable_safety_checker: true }, (l) => p(50, l))
         await loadResultAsNewDoc(firstImageUrl(out), `generated-${Date.now()}.png`)
@@ -285,6 +321,22 @@ export default function App() {
     })
   }
 
+  const runVideo = async () => {
+    if (!video) return notify('Choose a video first.', 'err')
+    if (colab.state !== 'online') { notify('Start the Colab notebook and connect it in Settings.', 'err'); setSettings(true); return }
+    await task(async (p) => {
+      p(20, 'Uploading video to Colab GPU…')
+      const fd = new FormData(); fd.append('file', video, video.name); fd.append('background', videoBg)
+      const t0 = Date.now(); const iv = window.setInterval(() => p(50, `Removing background frame by frame… ${Math.round((Date.now() - t0) / 1000)}s`), 1000)
+      try {
+        const blob = await colabPost('/video/remove-bg', fd)
+        if (videoOut) URL.revokeObjectURL(videoOut.url)
+        setVideoOut({ url: URL.createObjectURL(blob), ext: blob.type.includes('webm') ? 'webm' : 'mp4' })
+        notify('Video ready ✓')
+      } finally { window.clearInterval(iv) }
+    })
+  }
+
   // --- Export ---
   const exportOne = async (fmt: 'png' | 'jpg') => {
     if (!doc) return
@@ -310,7 +362,7 @@ export default function App() {
   }
 
   const pickTool = (t: Tool) => {
-    if (t === 'generate') { setTool(t); setScreen('editor'); return }
+    if (t === 'generate' || t === 'video') { setTool(t); setScreen('editor'); return }
     if (docs.length) { setTool(t); setScreen('editor') }
     else { pendingTool.current = t; fileInput.current?.click() }
   }
@@ -340,13 +392,14 @@ export default function App() {
           </div>
         )}
         <div className="top-right">
+          <button className="status-btn" onClick={() => setSettings(true)} title="Colab GPU"><StatusPill s={colab} /></button>
           <button className="icon-btn" title="Toggle theme" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '☀️' : '🌙'}</button>
           <button className="icon-btn" title="Settings" onClick={() => setSettings(true)}>⚙️</button>
           {screen === 'editor' && doc && <button className="btn primary" onClick={() => exportOne('png')}>Download</button>}
         </div>
       </header>
 
-      {screen === 'home' || (!doc && tool !== 'generate') ? (
+      {screen === 'home' || (!doc && tool !== 'generate' && tool !== 'video') ? (
         <Home onPick={pickTool} onFiles={addFiles} />
       ) : (
         <div className="editor fade-in">
@@ -359,7 +412,9 @@ export default function App() {
           </nav>
 
           <main className="canvas-area">
-            {doc ? (
+            {tool === 'video' ? (
+              <div className="empty video-stage">{progress ? <><div className="spinner" /><p>{progress.label}</p></> : videoOut ? <video src={videoOut.url} controls autoPlay loop className="checker" data-testid="video-out" /> : <p className="muted">Pick a video in the panel →</p>}</div>
+            ) : doc ? (
               <Stage doc={doc} preview={preview} showOriginal={showOriginal} brush={brush} brushSize={brushSize} hardness={hardness}
                 paintMask={tool === 'eraser' ? paintMask : null} onStrokeStart={onStrokeStart} onStroke={onStroke} onStrokeEnd={onStrokeEnd}
                 checker={bg.kind === 'transparent' && !showOriginal} progress={progress} />
@@ -408,7 +463,7 @@ export default function App() {
 
             {tool === 'upscale' && <>
               <h3>Upscale</h3>
-              <p className="muted small">Swin2SR super-resolution in your browser. Current size: {doc?.width}×{doc?.height}. Large images take a while.</p>
+              <p className="muted small">{colab.state === 'online' ? '⚡ Using your Colab GPU. ' : ''}Real-ESRGAN super-resolution{colab.state === 'online' ? '' : ' in your browser'}. Current size: {doc?.width}×{doc?.height}. Large images take a while.</p>
               <div className="row">
                 <button className="btn primary" data-testid="upscale-2" disabled={busy || !doc} onClick={() => runUpscale(2)}>2×</button>
                 <button className="btn primary" data-testid="upscale-4" disabled={busy || !doc} onClick={() => runUpscale(4)}>4×</button>
@@ -481,6 +536,23 @@ export default function App() {
               <button className="btn primary wide" data-testid="fal-tryon" disabled={busy || !doc} onClick={runTryOn}>Try it on</button>
             </FalPanel>}
 
+            {tool === 'video' && <>
+              <h3>Video background <em className="badge">Colab GPU</em></h3>
+              <p className="muted small">BiRefNet (MIT) runs on every frame on your free Colab T4, then ffmpeg rebuilds the video. Up to 60 s; about 3–8 frames per second on a T4.</p>
+              {colab.state !== 'online' && <div className="keybox" data-testid="colab-offline">
+                🖥️ <b>Start your Colab notebook</b> to use this tool. <a href={COLAB_NOTEBOOK} target="_blank" rel="noreferrer">Open in Colab</a> → Runtime → Run all, then paste the URL + token in <button className="linkish" onClick={() => setSettings(true)}>Settings</button>.
+              </div>}
+              <label className="btn wide"><input type="file" accept="video/mp4,video/webm,video/quicktime" hidden data-testid="video-input" onChange={(e) => { setVideo(e.target.files?.[0] ?? null); e.target.value = '' }} />🎬 {video ? video.name : 'Choose video'}</label>
+              <h4>Output</h4>
+              <div className="seg">
+                <button className={videoBg === 'transparent' ? 'on' : ''} onClick={() => setVideoBg('transparent')}>Transparent (WebM)</button>
+                <button className={videoBg !== 'transparent' ? 'on' : ''} onClick={() => setVideoBg(videoBg === 'transparent' ? '#00ff00' : videoBg)}>Colour (MP4)</button>
+              </div>
+              {videoBg !== 'transparent' && <label className="field inline"><span>Background</span><input type="color" value={videoBg} onChange={(e) => setVideoBg(e.target.value)} /></label>}
+              <button className="btn primary wide" data-testid="video-run" disabled={busy || !video} onClick={runVideo}>Remove video background</button>
+              {videoOut && <a className="btn wide" href={videoOut.url} download={`cutkit-video.${videoOut.ext}`}>⬇️ Download {videoOut.ext.toUpperCase()}</a>}
+            </>}
+
             {tool === 'export' && <>
               <h3>Export</h3>
               <h4>Size</h4>
@@ -506,7 +578,7 @@ export default function App() {
       )}
 
       {drag && <div className="drop-overlay fade-in">Drop images to add</div>}
-      {settings && <Settings onClose={() => setSettings(false)} theme={theme} setTheme={setTheme} />}
+      {settings && <Settings onClose={() => setSettings(false)} theme={theme} setTheme={setTheme} colab={colab} recheck={recheck} />}
       {toast && <div className={`toast ${toast.kind} pop-in`} data-testid="toast" role="status">{toast.msg}</div>}
     </div>
   )
